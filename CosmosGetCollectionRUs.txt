@@ -1,0 +1,209 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "CosmosAuthToken": {
+                "inputs": {
+                    "function": {
+                        "id": "/subscriptions/97284064-a541-4591-aa38-d52ed9453088/resourceGroups/jabCosmosAuthToken/providers/Microsoft.Web/sites/jabCosmosAuthToken/functions/CosmosAuthToken"
+                    }
+                },
+                "runAfter": {},
+                "type": "Function"
+            },
+            "Extract_Offer_Authorization": {
+                "inputs": {
+                    "content": "@body('CosmosAuthToken')",
+                    "schema": {
+                        "properties": {
+                            "token": {
+                                "type": "string"
+                            },
+                            "utcdate": {
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "CosmosAuthToken": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Extract_Offer_Data": {
+                "inputs": {
+                    "content": "@body('Fetch_Cosmos_Collection_RUs')",
+                    "schema": {
+                        "properties": {
+                            "Offers": {
+                                "items": {
+                                    "properties": {
+                                        "_etag": {
+                                            "type": "string"
+                                        },
+                                        "_rid": {
+                                            "type": "string"
+                                        },
+                                        "_self": {
+                                            "type": "string"
+                                        },
+                                        "_ts": {
+                                            "type": "integer"
+                                        },
+                                        "content": {
+                                            "properties": {
+                                                "offerIsAutoScaleEnabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "offerIsRUPerMinuteThroughputEnabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "offerThroughput": {
+                                                    "type": "integer"
+                                                },
+                                                "userSpecifiedThroughput": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "offerResourceId": {
+                                            "type": "string"
+                                        },
+                                        "offerType": {
+                                            "type": "string"
+                                        },
+                                        "offerVersion": {
+                                            "type": "string"
+                                        },
+                                        "resource": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "resource",
+                                        "offerType",
+                                        "offerResourceId",
+                                        "offerVersion",
+                                        "content",
+                                        "id",
+                                        "_rid",
+                                        "_self",
+                                        "_etag",
+                                        "_ts"
+                                    ],
+                                    "type": "object"
+                                },
+                                "type": "array"
+                            },
+                            "_count": {
+                                "type": "integer"
+                            },
+                            "_rid": {
+                                "type": "string"
+                            }
+                        },
+                        "type": "object"
+                    }
+                },
+                "runAfter": {
+                    "Fetch_Cosmos_Collection_RUs": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson"
+            },
+            "Fetch_Cosmos_Collection_RUs": {
+                "inputs": {
+                    "headers": {
+                        "authorization": "@body('Extract_Offer_Authorization')['token']",
+                        "x-ms-date": "@body('Extract_Offer_Authorization')['utcdate']",
+                        "x-ms-version": "2017-02-22"
+                    },
+                    "method": "GET",
+                    "uri": "https://jabcos.documents.azure.com/offers"
+                },
+                "runAfter": {
+                    "Extract_Offer_Authorization": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "Format_Email": {
+                "inputs": {
+                    "columns": [
+                        {
+                            "header": "CollectionRID",
+                            "value": "@item()?['offerResourceId']"
+                        },
+                        {
+                            "header": "ProvisioneRUs",
+                            "value": "@item()?['content']?['offerThroughput']"
+                        }
+                    ],
+                    "format": "HTML",
+                    "from": "@body('Extract_Offer_Data')?['Offers']"
+                },
+                "runAfter": {
+                    "Extract_Offer_Data": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Table"
+            },
+            "Send_an_email": {
+                "inputs": {
+                    "body": {
+                        "Body": "@body('Format_Email')",
+                        "IsHtml": true,
+                        "Subject": "Cosmos DB Collection Provisioning - @{utcNow()}",
+                        "To": "John.Abele@microsoft.com;jdabele@gmail.com"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/Mail"
+                },
+                "runAfter": {
+                    "Format_Email": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "Recurrence": {
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "10"
+                        ]
+                    },
+                    "timeZone": "Central Standard Time"
+                },
+                "type": "Recurrence"
+            }
+        }
+    }
+}
